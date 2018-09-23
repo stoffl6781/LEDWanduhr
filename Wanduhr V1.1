@@ -8,6 +8,8 @@
 #define ONE_WIRE_BUS 2 //DS18B20 Connected to Pin 3
 RCSwitch mySwitch = RCSwitch();
 uint8_t is_sent = 0;
+uint8_t is_sent_display = 0;
+uint8_t is_sent_displayoff = 0;
 
 OneWire oneWire(ONE_WIRE_BUS); // For the DS18B20
 DallasTemperature sensors(&oneWire);
@@ -107,13 +109,29 @@ void printTemperature(DeviceAddress deviceAddress)
     mySwitch.send(tempCx100+100000, 24); //Temperature x100 with all the accuracy needed
   }
 }
-
-void sendAnalog0(){
+// switch the RPIdisplay off or on 
+void senddisplay(){
   analog_reading = analogRead(sensor_pin);
-  float analog0 = analogRead(sensor_pin);
-  int analogCx100 = (int)(analog0*100);
-  mySwitch.send(analogCx100+110000, 24);
+
+  if(analog_reading > threshold) {
+    if (is_sent_display == 0){
+                    is_sent_display = 1;
+                    mySwitch.send(2+110000, 24);
+                    }}
+    else{
+      is_sent_display = 0;
+    if(analog_reading < threshold) {  
+    if (is_sent_displayoff == 0){
+                    is_sent_displayoff = 1;
+                    mySwitch.send(1+110000, 24);
+                    }}
+                    
+    else{
+      is_sent_displayoff = 0;}
+
+    }
   }
+
 void loop()
 {
   analog_reading = analogRead(sensor_pin);
@@ -168,10 +186,10 @@ void loop()
                     is_sent = 1;
                     sensors.requestTemperatures();  
                     printTemperature(Thermometer);
-                    sendAnalog0();
                     Serial.print("\n\r");
               }
     }else{
       is_sent = 0;
     }
+    senddisplay();
 }
