@@ -1,0 +1,177 @@
+
+#include <Wire.h>
+#include <DS3231.h>
+
+#include <RCSwitch.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#define ONE_WIRE_BUS 2 //DS18B20 Connected to Pin 3
+RCSwitch mySwitch = RCSwitch();
+uint8_t is_sent = 0;
+
+OneWire oneWire(ONE_WIRE_BUS); // For the DS18B20
+DallasTemperature sensors(&oneWire);
+DeviceAddress Thermometer = { 0x28, 0xFF, 0x75, 0xE2, 0x51, 0x14, 0x00, 0xBE  }; //Obtained using another program
+
+
+#define first_led_pin 23
+#define last_led_pin 45
+#define sensor_pin 0
+
+#define transistor_pin 8
+// if analog read value is less than this threshold the LED at transistor should turn on
+#define threshold 5
+
+DS3231 clock;
+RTCDateTime dt;
+
+//array store the number of leds connected
+const char led[] = {45, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 43};
+
+// analog read value
+unsigned int analog_reading;
+
+// other variables
+unsigned char current_h_led, current_m_led,current_s_led, last_hour;
+unsigned int h_index,m_index,s_index,h,m,s,i;
+
+
+void init_variables(){ 
+  /*
+   * Function initialize the current leds and make them high
+  */
+  unsigned int offset;
+  dt = clock.getDateTime();
+
+  // calculate the index base on current time for led array
+  h_index = (dt.hour)%12;
+  m_index = (int)((dt.minute)/5);
+  s_index = (int)((dt.second)/5);
+
+
+  // extracting curent led number from array
+  current_h_led = led[h_index];
+  current_m_led = led[m_index];
+  current_s_led = led[s_index];
+
+
+  digitalWrite(current_h_led, HIGH);
+  digitalWrite(current_m_led, HIGH);
+  digitalWrite(current_s_led, HIGH);
+
+
+  // storing current hour,min and sec to be used in main loop
+  h = h_index;
+  m = m_index;
+  s = s_index;
+
+}
+
+void setup()
+{
+  Serial.begin(9600);
+  
+  // Initialize DS3231
+  Serial.println("Initialize DS3231");
+  
+  clock.begin();
+  mySwitch.enableTransmit(7);
+  sensors.begin();
+  sensors.setResolution(Thermometer, 10);
+  
+  // Set sketch compiling time
+  clock.setDateTime(__DATE__, __TIME__);
+  //clock.setDateTime(2018, 7, 27, 0, 0, 0);
+
+  // making leds ouput
+   for (int i = first_led_pin; i <= last_led_pin ; i += 2 ) {
+    pinMode(i, OUTPUT);    // set pins as outputs
+    digitalWrite(i, LOW);  // switch the output pins off
+  }
+
+  pinMode(transistor_pin, OUTPUT);
+  
+  init_variables();
+}
+void printTemperature(DeviceAddress deviceAddress)
+{
+  float tempC = sensors.getTempC(deviceAddress);
+  int tempCx100 = (int)(tempC*100); // Multiply the float value > int with 4 digits
+
+  if (tempC == -127.00) {
+    Serial.print("Error getting temperature");
+    mySwitch.send(0000, 24);
+  } else {
+    Serial.print("C: ");
+    Serial.print(tempC);//reads the temp value on the serial port
+    mySwitch.send(tempCx100+100000, 24); //Temperature x100 with all the accuracy needed
+  }
+}
+
+void sendAnalog0(){
+  analog_reading = analogRead(sensor_pin);
+  float analog0 = analogRead(sensor_pin);
+  int analogCx100 = (int)(analog0*100);
+  mySwitch.send(analogCx100+110000, 24);
+  }
+void loop()
+{
+  analog_reading = analogRead(sensor_pin);
+
+  if(analog_reading > threshold){
+  digitalWrite(transistor_pin, HIGH);
+  }
+  else{
+    digitalWrite(transistor_pin, LOW);
+  }
+  //reading values
+    dt = clock.getDateTime();
+  
+  // calculating index
+    h_index = (dt.hour)%12;
+    m_index = (int)((dt.minute)/5);
+    s_index = (int)((dt.second)/5);
+
+  
+  // extracting led values based on time
+    current_h_led = led[h_index];
+    current_m_led = led[m_index];
+    current_s_led = led[s_index];
+
+
+// in order to avoid operation repeatedly we used if statement
+    if( (h_index != h) || (m_index != m) || (s_index != s) ){
+      // stroing current index for next iteration
+      h = h_index;
+      m = m_index;
+      s = s_index;
+
+
+      // if an index changed then make it low 
+       for ( i = first_led_pin; i <= last_led_pin ; i += 2 ) {
+        if ((led[h_index] == i) || (led[m_index] == i) || (led[s_index] == i)){
+            digitalWrite(i,HIGH);
+            Serial.print("seconds: ");Serial.println(dt.second);
+            Serial.print("LED: ");Serial.println(i);
+            //continue;
+          }
+          else{
+        digitalWrite(i, LOW);  // switch the output pins off
+      }
+     }
+                  
+    }
+
+    // repeat after every 5 minute
+    if((( (dt.minute) % 5)) == 0){
+              if (is_sent == 0){
+                    is_sent = 1;
+                    sensors.requestTemperatures();  
+                    printTemperature(Thermometer);
+                    sendAnalog0();
+                    Serial.print("\n\r");
+              }
+    }else{
+      is_sent = 0;
+    }
+}
